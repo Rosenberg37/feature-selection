@@ -16,13 +16,12 @@ from sklearn.model_selection import StratifiedKFold
 
 
 class FitnessFunction:
-    def __init__(self, n_splits=5, *args, **kwargs):
+    def __init__(self, n_splits=5):
         """
         Parameters
         -----------
         n_splits :int,
             Number of splits for cv
-        verbose: 0 or 1
         """
         self.n_splits = n_splits
 
@@ -46,7 +45,7 @@ class FeatureSelectionGA:
     FeaturesSelectionGA
     This class uses Genetic Algorithm to find out the best features for an input model
     using Distributed Evolutionary Algorithms in Python(DEAP) package. Default toolbox is
-    used for GA but it can be changed accordingly.
+    used for GA, but it can be changed accordingly.
     """
 
     def __init__(self, model, x, y, verbose=0, ff_obj=None):
@@ -59,8 +58,6 @@ class FeatureSelectionGA:
                  and n_features is the number of features.
             y  : {array-like}, shape = [n_samples]
                  Target Values
-        cv_split: int
-                 Number of splits for cross_validation to calculate fitness.
         verbose: 0 or 1
         """
         self.model = model
@@ -81,7 +78,7 @@ class FeatureSelectionGA:
         self.final_fitness = []
         self.fitness_in_generation = {}
         self.best_ind = None
-        if ff_obj == None:
+        if ff_obj is None:
             self.fitness_function = FitnessFunction(n_splits=5)
         else:
             self.fitness_function = ff_obj
@@ -100,9 +97,10 @@ class FeatureSelectionGA:
         if self.verbose == 1:
             print("Individual: {}  Fitness_score: {} ".format(individual, fitness))
 
-        return (fitness,)
+        return fitness,
 
-    def _create(self):
+    @staticmethod
+    def _create():
         creator.create("FeatureSelect", base.Fitness, weights=(1.0,))
         creator.create("Individual", list, fitness=creator.FeatureSelect)
         return creator
@@ -122,7 +120,7 @@ class FeatureSelectionGA:
 
     def register_toolbox(self, toolbox):
         """
-        Register custom created toolbox. Evalute function will be registerd
+        Register custom created toolbox. Evaluate function will be registered
         in this method.
         Parameters
         -----------
@@ -159,19 +157,18 @@ class FeatureSelectionGA:
     def get_final_scores(self, pop, fits):
         self.final_fitness = list(zip(pop, fits))
 
-    def generate(self, n_pop, cxpb=0.5, mutxpb=0.2, ngen=5, set_toolbox=False):
-
+    def generate(self, num_population=64, crossover_prob=0.5, mutate_prob=0.2, num_generation=8, set_toolbox=False):
         """
         Generate evolved population
         Parameters
         -----------
-            n_pop : {int}
+            num_population : {int}
                     population size
-            cxpb  : {float}
-                    crossover probablity
-            mutxpb: {float}
-                    mutation probablity
-            n_gen : {int}
+            crossover_prob  : {float}
+                    crossover probability
+            mutate_prob: {float}
+                    mutation probability
+            num_generation : {int}
                     number of generations
             set_toolbox : {boolean}
                           If True then you have to create custom toolbox before calling
@@ -183,8 +180,8 @@ class FeatureSelectionGA:
 
         if self.verbose == 1:
             print(
-                "Population: {}, crossover_probablity: {}, mutation_probablity: {}, total generations: {}".format(
-                    n_pop, cxpb, mutxpb, ngen
+                "Population: {}, crossover_probability: {}, mutation_probability: {}, total generations: {}".format(
+                    num_population, crossover_prob, mutate_prob, num_generation
                 )
             )
 
@@ -192,19 +189,18 @@ class FeatureSelectionGA:
             self.toolbox = self._default_toolbox()
         else:
             raise Exception(
-                "Please create a toolbox.Use create_toolbox to create and register_toolbox to register. Else set set_toolbox = False to use defualt toolbox"
+                "Please create a toolbox.Use create_toolbox to create and register_toolbox to register. Else set set_toolbox = False to use default toolbox"
             )
-        pop = self.toolbox.population(n_pop)
-        CXPB, MUTPB, NGEN = cxpb, mutxpb, ngen
+        pop = self.toolbox.population(num_population)
 
         # Evaluate the entire population
         print("EVOLVING.......")
-        fitnesses = list(map(self.toolbox.evaluate, pop))
+        fitness = list(map(self.toolbox.evaluate, pop))
 
-        for ind, fit in zip(pop, fitnesses):
+        for ind, fit in zip(pop, fitness):
             ind.fitness.values = fit
 
-        for g in range(NGEN):
+        for g in range(num_generation):
             print("-- GENERATION {} --".format(g + 1))
             offspring = self.toolbox.select(pop, len(pop))
             self.fitness_in_generation[str(g + 1)] = max(
@@ -215,27 +211,27 @@ class FeatureSelectionGA:
 
             # Apply crossover and mutation on the offspring
             for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < CXPB:
+                if random.random() < crossover_prob:
                     self.toolbox.mate(child1, child2)
                     del child1.fitness.values
                     del child2.fitness.values
 
             for mutant in offspring:
-                if random.random() < MUTPB:
+                if random.random() < mutate_prob:
                     self.toolbox.mutate(mutant)
                     del mutant.fitness.values
 
             # Evaluate the individuals with an invalid fitness
             weak_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = list(map(self.toolbox.evaluate, weak_ind))
-            for ind, fit in zip(weak_ind, fitnesses):
+            fitness = list(map(self.toolbox.evaluate, weak_ind))
+            for ind, fit in zip(weak_ind, fitness):
                 ind.fitness.values = fit
             print("Evaluated %i individuals" % len(weak_ind))
 
             # The population is entirely replaced by the offspring
             pop[:] = offspring
 
-            # Gather all the fitnesses in one list and print the stats
+            # Gather all the fitness in one list and print the stats
         fits = [ind.fitness.values[0] for ind in pop]
 
         length = len(pop)
@@ -251,9 +247,10 @@ class FeatureSelectionGA:
         print("-- Only the fittest survives --")
 
         self.best_ind = tools.selBest(pop, 1)[0]
-        print(
-            "Best individual is %s, %s" % (self.best_ind, self.best_ind.fitness.values)
-        )
+        print(f"Best individual is {self.best_ind}.\n")
+        print(f"Dimension reduction is {1 - sum(self.best_ind) / len(self.best_ind)}.\n")
+        print(f"Accuracy is  {self.best_ind.fitness.values[0]}.\n")
+
         self.get_final_scores(pop, fits)
 
         return pop

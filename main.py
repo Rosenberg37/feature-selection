@@ -1,10 +1,11 @@
-from sklearn.datasets import load_breast_cancer
-from sklearn.ensemble import RandomForestClassifier
+import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
 
 from models.genetic_algorithm import FeatureSelectionGA, FitnessFunction
 
 if __name__ == '__main__':
-    model = RandomForestClassifier(n_jobs=-1, n_estimators=5)
-    X, y = load_breast_cancer(return_X_y=True)
+    model = KNeighborsClassifier(5)
+    data = pd.read_csv('data/low/vehicle.csv').values
+    X, y = data[:, :-1], data[:, -1]
     selector = FeatureSelectionGA(model, X, y, ff_obj=FitnessFunction())
-    pop = selector.generate(10)
+    pop = selector.generate()
