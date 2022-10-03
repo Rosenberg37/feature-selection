@@ -157,7 +157,14 @@ class FeatureSelectionGA:
     def get_final_scores(self, pop, fits):
         self.final_fitness = list(zip(pop, fits))
 
-    def generate(self, num_population=64, crossover_prob=0.5, mutate_prob=0.2, num_generation=8, set_toolbox=False):
+    def generate(
+            self,
+            num_population: int = 8,
+            crossover_prob: float = 0.5,
+            mutate_prob: float = 0.2,
+            num_generation: int = 4,
+            set_toolbox: bool = False,
+    ):
         """
         Generate evolved population
         Parameters
@@ -247,10 +254,12 @@ class FeatureSelectionGA:
         print("-- Only the fittest survives --")
 
         self.best_ind = tools.selBest(pop, 1)[0]
-        print(f"Best individual is {self.best_ind}.\n")
-        print(f"Dimension reduction is {1 - sum(self.best_ind) / len(self.best_ind)}.\n")
-        print(f"Accuracy is  {self.best_ind.fitness.values[0]}.\n")
+
+        accuracy = self.best_ind.fitness.values[0]
+        dim_reduction = 1 - sum(self.best_ind) / len(self.best_ind)
+        print(f"Dimension reduction is {dim_reduction}.")
+        print(f"Accuracy is  {accuracy}.")
 
         self.get_final_scores(pop, fits)
 
-        return pop
+        return pop, accuracy, dim_reduction
