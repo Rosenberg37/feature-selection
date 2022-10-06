@@ -1,16 +1,14 @@
 import os
 
 import pandas as pd
-from sklearn.linear_model import Perceptron
+from sklearn.linear_model import LogisticRegression, Perceptron
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from tabulate import tabulate
 
-from models.genetic_algorithm import FeatureSelectionGA
+from model import FeatureSelectionGA
 
-
-# TODO(Hill Climbing，Stimulate Healing)
 
 def get_csv_paths(data_path: str):
     csv_paths = list()
@@ -29,6 +27,7 @@ if __name__ == '__main__':
         'Perceptron': Perceptron(tol=1e-3, random_state=0),
         'DecisionTree': DecisionTreeClassifier(),
         'NaiveBayes': GaussianNB(),
+        'LogisticRegression': LogisticRegression()
     }
 
     csv_paths = get_csv_paths('./data')
@@ -39,10 +38,11 @@ if __name__ == '__main__':
         acc_list, dr_list = list(), list()
         for csv_path in csv_paths:
             data = pd.read_csv(csv_path).values
-            X, y = data[:, :-1], data[:, -1]
+            x, y = data[:, :-1], data[:, -1]
 
-            selector = FeatureSelectionGA(model, X, y)
+            selector = FeatureSelectionGA(model, x, y)
             pop, acc, dr = selector.generate()
+
             acc_list.append(acc)
             dr_list.append(dr)
 
