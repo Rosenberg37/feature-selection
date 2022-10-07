@@ -7,7 +7,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from tabulate import tabulate
 
-from model import FeatureSelectionGA
+from model import FeatureSelectionAlgo
 
 
 def get_csv_paths(data_path: str):
@@ -38,9 +38,8 @@ if __name__ == '__main__':
         acc_list, dr_list = list(), list()
         for csv_path in csv_paths:
             data = pd.read_csv(csv_path).values
-            x, y = data[:, :-1], data[:, -1]
 
-            selector = FeatureSelectionGA(model, x, y)
+            selector = FeatureSelectionAlgo(model, data)
             pop, acc, dr = selector.generate()
 
             acc_list.append(acc)

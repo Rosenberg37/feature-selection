@@ -1,21 +1,60 @@
 # -*- coding: UTF-8 -*-
 """
 @Project:   feature-selection 
-@File:      genetic_algorithm.py
+@File:      model.py
 @Author:    Rosenberg
 @Date:      2022/9/24 21:06 
 @Documentation: 
-    This file contains the implementation of the genetic algorithm for feature selection.
+    This file contains the implementation of the evolutionary algorithm for feature selection.
+    Mainly reference to the following article:
+        "https://www.jianshu.com/p/8fa044ed9267"
+        "https://www.jianshu.com/p/3cbf5df95597"
+        "https://www.jianshu.com/p/4873e16fa05a"
+        "https://www.jianshu.com/p/a15d06645767"
+        "https://www.jianshu.com/p/8e16fe258337"
+        "https://www.jianshu.com/p/0b9da31f9ba3"
 """
 import random
 
 import numpy as np
 from deap import base, creator, tools
+from scoop import futures
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
 
 
-class FeatureSelectionGA:
+class FitnessFunction:
+    def __init__(self, n_splits: int = 5):
+        """
+
+        :param n_splits: Number of splits for cv
+        """
+        self.n_splits: int = n_splits
+
+    def __call__(self, model, data, feature_code):
+        if np.sum(feature_code) == 0:
+            return 0, 1
+
+        feature_indices = np.where(feature_code == 1)[0]
+        x, y = data[:, feature_indices], data[:, -1]
+
+        cv_set = np.repeat(-1.0, x.shape[0])
+        skf = StratifiedKFold(n_splits=self.n_splits)
+        for train_index, test_index in skf.split(x, y):
+            x_train, x_test = x[train_index], x[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            if x_train.shape[0] != y_train.shape[0]:
+                raise Exception()
+            model.fit(x_train, y_train)
+            predicted_y = model.predict(x_test)
+            cv_set[test_index] = predicted_y
+
+        accuracy = accuracy_score(y, cv_set)
+        deduction_rate = np.sum(feature_code == 0) / len(feature_code)
+        return accuracy, deduction_rate
+
+
+class FeatureSelectionAlgo:
     """
     FeaturesSelectionGA
     This class uses Genetic Algorithm to find out the best features for an input model
@@ -26,9 +65,8 @@ class FeatureSelectionGA:
     def __init__(
             self,
             model=None,
-            x=None,
-            y=None,
-            fitness_function=None
+            data=None,
+            fitness_function: FitnessFunction = None
     ):
         """
         Parameters
@@ -42,65 +80,57 @@ class FeatureSelectionGA:
         """
 
         self.model = model
-        self.x = x
-        self.y = y
+        self.data = data
 
-        self.n_features = x.shape[1]
+        self.num_features = data.shape[1] - 1
 
         self.creator = self._default_creator()
         self.toolbox = self._default_toolbox()
 
-        self.final_fitness = []
-        self.fitness_in_generation = {}
-        self.best_individual = None
-
         if fitness_function is None:
-            self.fitness_function = FitnessFunction(n_splits=5)
+            self.fitness_function: FitnessFunction = FitnessFunction(n_splits=5)
         else:
-            self.fitness_function = fitness_function
+            self.fitness_function: FitnessFunction = fitness_function
 
     @staticmethod
     def _default_creator():
-        creator.create("FeatureSelect", base.Fitness, weights=(1.0,))
-        # 在创建单目标优化问题时，weights用来指示最大化和最小化。
-        # -1.0即代表问题是一个最小化问题，对于最大化，应将weights改为正数，如1.0。
-        creator.create("Individual", list, fitness=creator.FeatureSelect)
+        creator.create("FeatureSelObj", base.Fitness, weights=(1.0, 1.0))
+        # 对于多目标优化问题，weights用来指示多个优化目标之间的相对重要程度以及最大化最小化。
+        # (-1.0, -1.0)代表对第一个目标函数取最小值，对第二个目标函数取最小值。
+        creator.create("Individual", list, fitness=creator.FeatureSelObj)
         return creator
 
     def _default_toolbox(self):
         toolbox = base.Toolbox()
+
         toolbox.register("attr_bool", random.randint, 0, 1)
         toolbox.register(
             "individual",
             tools.initRepeat,
             creator.Individual,
             toolbox.attr_bool,
-            self.n_features,
+            self.num_features,
         )
         toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-        toolbox.register("mate", tools.cxTwoPoint)
+        toolbox.register("evaluate", self.evaluate)
+        toolbox.register("mate", tools.cxUniform, indpb=0.1)
         toolbox.register("mutate", tools.mutFlipBit, indpb=0.1)
         toolbox.register("select", tools.selTournament, tournsize=3)
-        toolbox.register("evaluate", self.evaluate)
+
+        toolbox.register("map", futures.map)
+
         return toolbox
 
     def evaluate(self, individual):
-        np_ind = np.asarray(individual)
-
-        if np.sum(np_ind) == 0:
-            fitness = 0.0
-        else:
-            feature_idx = np.where(np_ind == 1)[0]
-            fitness = self.fitness_function(self.model, self.x[:, feature_idx], self.y)
-
-        return fitness,
+        feature_code: np.ndarray = np.asarray(individual)
+        return self.fitness_function(self.model, self.data, feature_code)
 
     def generate(
             self,
-            num_population: int = 8,
+            num_population: int = 64,
             crossover_prob: float = 0.5,
             mutate_prob: float = 0.2,
-            num_generation: int = 4,
+            num_generation: int = 8,
 
     ):
         """
@@ -111,22 +141,19 @@ class FeatureSelectionGA:
         :param num_generation: number of generations
         :return: Fittest population
         """
+        print("EVOLVING.......")
         pop = self.toolbox.population(num_population)
 
         # Evaluate the entire population
-        print("EVOLVING.......")
         fitness = list(map(self.toolbox.evaluate, pop))
-
         for ind, fit in zip(pop, fitness):
             ind.fitness.values = fit
 
         for g in range(num_generation):
             print(f"-- GENERATION {g + 1} --")
+
+            # Select and clone the individuals
             offspring = self.toolbox.select(pop, len(pop))
-            self.fitness_in_generation[str(g + 1)] = max(
-                [ind.fitness.values[0] for ind in pop]
-            )
-            # Clone the selected individuals
             offspring = list(map(self.toolbox.clone, offspring))
 
             # Apply crossover and mutation on the offspring
@@ -142,48 +169,22 @@ class FeatureSelectionGA:
                     del mutant.fitness.values
 
             # Evaluate the individuals with an invalid fitness
-            weak_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitness = list(map(self.toolbox.evaluate, weak_ind))
-            for ind, fit in zip(weak_ind, fitness):
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            fitness = list(map(self.toolbox.evaluate, invalid_ind))
+            for ind, fit in zip(invalid_ind, fitness):
                 ind.fitness.values = fit
-            print(f"Evaluated {len(weak_ind)} individuals")
+            print(f"Evaluated {len(invalid_ind)} individuals")
 
-            # The population is entirely replaced by the offspring
-            pop[:] = offspring
-
-            # Gather all the fitness in one list and print the stats
-        fits = [ind.fitness.values[0] for ind in pop]
+            # Environment select the elites
+            pop = tools.selBest(offspring, num_population, fit_attr='fitness')
 
         print("-- Only the fittest survives --")
-        self.best_individual = tools.selBest(pop, 1)[0]
+        best_individual = tools.selBest(pop, 1)[0]
 
-        accuracy = self.best_individual.fitness.values[0]
-        dim_reduction = 1 - sum(self.best_individual) / len(self.best_individual)
+        accuracy = best_individual.fitness.values[0]
+        dim_reduction = 1 - sum(best_individual) / len(best_individual)
 
         print(f"Dimension reduction: {dim_reduction}.")
         print(f"Accuracy: {accuracy}.")
 
-        self.final_fitness = list(zip(pop, fits))
         return pop, accuracy, dim_reduction
-
-
-class FitnessFunction:
-    def __init__(self, n_splits: int = 5):
-        """
-
-        :param n_splits: Number of splits for cv
-        """
-        self.n_splits: int = n_splits
-
-    def __call__(self, model, x, y):
-        cv_set = np.repeat(-1.0, x.shape[0])
-        skf = StratifiedKFold(n_splits=self.n_splits)
-        for train_index, test_index in skf.split(x, y):
-            x_train, x_test = x[train_index], x[test_index]
-            y_train, y_test = y[train_index], y[test_index]
-            if x_train.shape[0] != y_train.shape[0]:
-                raise Exception()
-            model.fit(x_train, y_train)
-            predicted_y = model.predict(x_test)
-            cv_set[test_index] = predicted_y
-        return accuracy_score(y, cv_set)
