@@ -18,7 +18,6 @@ import random
 
 import numpy as np
 from deap import base, creator, tools
-from scoop import futures
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
 
@@ -54,7 +53,7 @@ class FitnessFunction:
         return accuracy, deduction_rate
 
 
-class FeatureSelectionAlgo:
+class FeatureSelectionNSGA:
     """
     FeaturesSelectionGA
     This class uses Genetic Algorithm to find out the best features for an input model
@@ -113,11 +112,10 @@ class FeatureSelectionAlgo:
         )
         toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         toolbox.register("evaluate", self.evaluate)
+
+        toolbox.register("select", tools.selNSGA2)
         toolbox.register("mate", tools.cxUniform, indpb=0.1)
         toolbox.register("mutate", tools.mutFlipBit, indpb=0.1)
-        toolbox.register("select", tools.selTournament, tournsize=3)
-
-        toolbox.register("map", futures.map)
 
         return toolbox
 
@@ -129,7 +127,7 @@ class FeatureSelectionAlgo:
             self,
             num_population: int = 64,
             crossover_prob: float = 0.5,
-            mutate_prob: float = 0.2,
+            # mutate_prob: float = 0.2,
             num_generation: int = 8,
 
     ):
@@ -144,39 +142,40 @@ class FeatureSelectionAlgo:
         print("EVOLVING.......")
         pop = self.toolbox.population(num_population)
 
-        # Evaluate the entire population
-        fitness = list(map(self.toolbox.evaluate, pop))
-        for ind, fit in zip(pop, fitness):
+        # Evaluate the individuals with an invalid fitness
+        invalid_ind = [ind for ind in pop if not ind.fitness.valid]
+        fitness = self.toolbox.map(self.toolbox.evaluate, invalid_ind)
+        for ind, fit in zip(invalid_ind, fitness):
             ind.fitness.values = fit
+
+        # This is just to assign the crowding distance to the individuals
+        # no actual selection is done
+        pop = self.toolbox.select(pop, len(pop))
 
         for g in range(num_generation):
             print(f"-- GENERATION {g + 1} --")
 
-            # Select and clone the individuals
-            offspring = self.toolbox.select(pop, len(pop))
-            offspring = list(map(self.toolbox.clone, offspring))
+            offspring = tools.selTournamentDCD(pop, len(pop))
+            offspring = [self.toolbox.clone(ind) for ind in offspring]
 
-            # Apply crossover and mutation on the offspring
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < crossover_prob:
-                    self.toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
+            for ind1, ind2 in zip(offspring[::2], offspring[1::2]):
+                if random.random() <= crossover_prob:
+                    self.toolbox.mate(ind1, ind2)
 
-            for mutant in offspring:
-                if random.random() < mutate_prob:
-                    self.toolbox.mutate(mutant)
-                    del mutant.fitness.values
+                self.toolbox.mutate(ind1)
+                self.toolbox.mutate(ind2)
+                del ind1.fitness.values, ind2.fitness.values
 
             # Evaluate the individuals with an invalid fitness
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitness = list(map(self.toolbox.evaluate, invalid_ind))
+            fitness = self.toolbox.map(self.toolbox.evaluate, invalid_ind)
             for ind, fit in zip(invalid_ind, fitness):
                 ind.fitness.values = fit
+
             print(f"Evaluated {len(invalid_ind)} individuals")
 
-            # Environment select the elites
-            pop = tools.selBest(offspring, num_population, fit_attr='fitness')
+            # Select the next generation population
+            pop = self.toolbox.select(pop + offspring, num_population)
 
         print("-- Only the fittest survives --")
         best_individual = tools.selBest(pop, 1)[0]
