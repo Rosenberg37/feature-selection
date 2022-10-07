@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 
 import pandas as pd
@@ -7,40 +8,30 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from tabulate import tabulate
 
-from model import FeatureSelectionNSGA
+from utils import feature_selection_with_nsga, get_csv_paths, get_toolbox
 
+models = {
+    'KNN': KNeighborsClassifier(5),
+    'Perceptron': Perceptron(tol=1e-3, random_state=0),
+    'DecisionTree': DecisionTreeClassifier(),
+    'NaiveBayes': GaussianNB(),
+    'LogisticRegression': LogisticRegression()
+}
 
-def get_csv_paths(data_path: str):
-    csv_paths = list()
-    for path in os.listdir(data_path):
-        cur_path = os.path.join(data_path, path)
-        if os.path.isdir(cur_path):
-            csv_paths += get_csv_paths(cur_path)
-        elif cur_path.endswith('.csv'):
-            csv_paths.append(cur_path)
-    return csv_paths
-
+csv_paths = get_csv_paths('./data')
+dataset_names = [os.path.basename(csv_path)[:-4] for csv_path in csv_paths]
 
 if __name__ == '__main__':
-    models = {
-        'KNN': KNeighborsClassifier(5),
-        'Perceptron': Perceptron(tol=1e-3, random_state=0),
-        'DecisionTree': DecisionTreeClassifier(),
-        'NaiveBayes': GaussianNB(),
-        'LogisticRegression': LogisticRegression()
-    }
-
-    csv_paths = get_csv_paths('./data')
-    dataset_names = [os.path.basename(csv_path)[:-4] for csv_path in csv_paths]
-
     acc_dict, dr_dict = dict(), dict()
     for name, model in models.items():
         acc_list, dr_list = list(), list()
         for csv_path in csv_paths:
             data = pd.read_csv(csv_path).values
 
-            selector = FeatureSelectionNSGA(model, data)
-            pop, acc, dr = selector.generate()
+            pool = multiprocessing.Pool()
+            toolbox = get_toolbox(model, data, pool)
+            pop, acc, dr = feature_selection_with_nsga(toolbox)
+            pool.close()
 
             acc_list.append(acc)
             dr_list.append(dr)
