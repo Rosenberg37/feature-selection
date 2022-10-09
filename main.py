@@ -1,43 +1,28 @@
 import multiprocessing
-import os
 
-import pandas as pd
-from sklearn.linear_model import LogisticRegression, Perceptron
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
 from tabulate import tabulate
 
-from utils import feature_selection_with_nsga, get_csv_paths, get_toolbox
-
-models = {
-    'KNN': KNeighborsClassifier(5),
-    'Perceptron': Perceptron(tol=1e-3, random_state=0),
-    'DecisionTree': DecisionTreeClassifier(),
-    'NaiveBayes': GaussianNB(),
-    'LogisticRegression': LogisticRegression()
-}
-
-csv_paths = get_csv_paths('./data')
-dataset_names = [os.path.basename(csv_path)[:-4] for csv_path in csv_paths]
+from model import feature_selection_with_nsga2, get_toolbox
 
 if __name__ == '__main__':
-    acc_dict, dr_dict = dict(), dict()
-    for name, model in models.items():
-        acc_list, dr_list = list(), list()
-        for csv_path in csv_paths:
-            data = pd.read_csv(csv_path).values
+    model_names = ['KNN', 'DecisionTree', 'SVM']
+    dataset_names = ['vehicle', 'cleveland', 'heart', 'ionosphere', 'srbct', 'arcene']
 
-            pool = multiprocessing.Pool()
-            toolbox = get_toolbox(model, data, pool)
-            pop, acc, dr = feature_selection_with_nsga(toolbox)
-            pool.close()
+    with multiprocessing.Pool() as pool:
 
-            acc_list.append(acc)
-            dr_list.append(dr)
+        acc_dict, dr_dict = dict(), dict()
+        for model_name in model_names:
 
-        acc_dict[name] = acc_list
-        dr_dict[name] = dr_list
+            acc_list, dr_list = list(), list()
+            for dataset_name in dataset_names:
+                toolbox = get_toolbox(model_name, dataset_name, pool)
+                _, acc, dr = feature_selection_with_nsga2(toolbox)
+
+                acc_list.append(acc)
+                dr_list.append(dr)
+
+            acc_dict[model_name] = acc_list
+            dr_dict[model_name] = dr_list
 
     print("----------|Accuracy Table|----------")
     print(tabulate({'Datasets': dataset_names, **acc_dict}, tablefmt='fancy_grid', headers='keys'))
