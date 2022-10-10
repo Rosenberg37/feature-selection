@@ -15,13 +15,13 @@
         "https://www.jianshu.com/p/0b9da31f9ba3"
 """
 import random
+from typing import Union
 
 import numpy as np
 import pandas as pd
 from deap import base, creator, tools
 from deap.tools.emo import assignCrowdingDist
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import cross_val_score, train_test_split
 from tqdm import tqdm
 
 import utils
@@ -33,11 +33,13 @@ creator.create("Individual", list, fitness=creator.FeatureSelObj)
 def get_toolbox(
         model_name: str,
         dataset_name: str,
+        split: Union[int, float],
         pool=None
 ):
     toolbox = base.Toolbox()
     toolbox.dataset_name = dataset_name
     toolbox.model_name = model_name
+    toolbox.split = split
 
     dataset_path = utils.dataset_paths[dataset_name]
     dataset = pd.read_csv(dataset_path).values
@@ -52,7 +54,7 @@ def get_toolbox(
     )
 
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-    toolbox.register("evaluate", evaluate, model_name=model_name, dataset=dataset)
+    toolbox.register("evaluate", evaluate, model_name=model_name, dataset=dataset, split=split)
 
     toolbox.register("select", tools.selNSGA2)
     toolbox.register("mate", tools.cxUniform, indpb=0.3)
@@ -68,7 +70,7 @@ def evaluate(
         individual: np.ndarray,
         model_name: str,
         dataset: np.ndarray,
-        n_splits: int = 10
+        split: Union[int, float] = 10
 ):
     feature_code: np.ndarray = np.asarray(individual)
     feature_indices = np.where(feature_code == 1)[0]
@@ -78,26 +80,26 @@ def evaluate(
     model = utils.models[model_name]()
     x, y = dataset[:, feature_indices], dataset[:, -1]
 
-    cv_set = np.repeat(-1.0, x.shape[0])
-    skf = StratifiedKFold(n_splits=n_splits)
-
-    for train_index, test_index in skf.split(x, y):
-        x_train, x_test = x[train_index], x[test_index]
-        y_train, y_test = y[train_index], y[test_index]
-
+    if type(split) is float:
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=split)
         model.fit(x_train, y_train)
-        predicted_y = model.predict(x_test)
-        cv_set[test_index] = predicted_y
+        accuracy = model.score(x_test, y_test)
 
-    accuracy = accuracy_score(y, cv_set)
+    elif type(split) is int:
+        accuracy = np.mean(cross_val_score(model, x, y, cv=split))
+
+    else:
+        raise TypeError('split must be an integer or float.')
+
     deduction_rate = np.sum(feature_code == 0) / len(feature_code)
+
     return accuracy, deduction_rate
 
 
 def feature_selection_with_nsga2(
         toolbox: base.Toolbox,
-        num_generation: int = 100,
-        num_population: int = 200,
+        num_generation: int = 256,
+        num_population: int = 64,
         crossover_prob: float = 0.7,
         mutate_prob: float = 0.2,
 
@@ -122,10 +124,11 @@ def feature_selection_with_nsga2(
     logbook = tools.Logbook()
     logbook.header = "gen", "evals", "std", "min", "avg", "max"
 
-    print(f"Evolving on {toolbox.dataset_name} with {toolbox.model_name}.")
+    print(f"Evolving on {toolbox.dataset_name} with {toolbox.model_name} under setiing of {toolbox.split}.")
 
     # Generate population
     pop = toolbox.population(num_population)
+    gens = [pop]
 
     # Initialize attributes
     fitness = toolbox.map(toolbox.evaluate, pop)
@@ -166,13 +169,8 @@ def feature_selection_with_nsga2(
         # Select the next generation population
         pop = toolbox.select(pop, num_population)
 
+        gens.append(pop)
         record = stats.compile(pop)
         logbook.record(gen=0, evals=len(invalid_ind), **record)
 
-    accuracy = pop[0].fitness.values[0]
-    dim_reduction = pop[0].fitness.values[1]
-
-    print(f"Dimension reduction: {dim_reduction}")
-    print(f"Accuracy: {accuracy}\n")
-
-    return pop, logbook
+    return gens, logbook
