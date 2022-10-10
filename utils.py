@@ -8,8 +8,9 @@
     ...
 """
 import os
+from functools import reduce
 
-from sklearn.linear_model import LogisticRegression, Perceptron
+from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -27,12 +28,18 @@ def get_csv_paths(data_path: str):
     return csv_paths
 
 
+def deduplicate(a: list) -> iter:
+    return reduce(lambda x, y: x if y in x else x + [y], [[], *a])
+
+
 models = {
-    'KNN': lambda: KNeighborsClassifier(5),
-    'Perceptron': lambda: Perceptron(tol=1e-3, random_state=0),
-    'DecisionTree': lambda: DecisionTreeClassifier(criterion='entropy'),
+    '1NN': lambda: KNeighborsClassifier(1),
+    '3NN': lambda: KNeighborsClassifier(3),
+    '5NN': lambda: KNeighborsClassifier(5),
+    'J48': lambda: DecisionTreeClassifier(criterion='entropy'),
     'NaiveBayes': lambda: GaussianNB(),
     'LogisticRegression': lambda: LogisticRegression(),
     'SVM': lambda: SVC(),
 }
+
 dataset_paths = {os.path.basename(csv_path)[:-4]: csv_path for csv_path in get_csv_paths(f'./data')}

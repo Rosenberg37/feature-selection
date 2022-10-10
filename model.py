@@ -19,8 +19,10 @@ import random
 import numpy as np
 import pandas as pd
 from deap import base, creator, tools
+from deap.tools.emo import assignCrowdingDist
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
+from tqdm import tqdm
 
 import utils
 
@@ -34,11 +36,13 @@ def get_toolbox(
         pool=None
 ):
     toolbox = base.Toolbox()
-
-    toolbox.register("attr_bool", random.randint, 0, 1)
+    toolbox.dataset_name = dataset_name
+    toolbox.model_name = model_name
 
     dataset_path = utils.dataset_paths[dataset_name]
     dataset = pd.read_csv(dataset_path).values
+
+    toolbox.register("attr_bool", random.randint, 0, 1)
     toolbox.register(
         "individual",
         tools.initRepeat,
@@ -64,12 +68,12 @@ def evaluate(
         individual: np.ndarray,
         model_name: str,
         dataset: np.ndarray,
-        n_splits: int = 5
+        n_splits: int = 10
 ):
     feature_code: np.ndarray = np.asarray(individual)
     feature_indices = np.where(feature_code == 1)[0]
     if len(feature_indices) == 0:
-        return 0, 1
+        return 0, 0
 
     model = utils.models[model_name]()
     x, y = dataset[:, feature_indices], dataset[:, -1]
@@ -91,9 +95,9 @@ def evaluate(
 
 
 def feature_selection_with_nsga2(
-        toolbox,
-        num_generation: int = 16,
-        num_population: int = 64,
+        toolbox: base.Toolbox,
+        num_generation: int = 100,
+        num_population: int = 200,
         crossover_prob: float = 0.7,
         mutate_prob: float = 0.2,
 
@@ -109,52 +113,66 @@ def feature_selection_with_nsga2(
     :param num_generation: number of generations
     :return: Fittest population
     """
+    stats = tools.Statistics(lambda ind: ind.fitness.values)
+    stats.register("avg", np.mean, axis=0)
+    stats.register("std", np.std, axis=0)
+    stats.register("min", np.min, axis=0)
+    stats.register("max", np.max, axis=0)
+
+    logbook = tools.Logbook()
+    logbook.header = "gen", "evals", "std", "min", "avg", "max"
+
+    print(f"Evolving on {toolbox.dataset_name} with {toolbox.model_name}.")
+
+    # Generate population
     pop = toolbox.population(num_population)
-    print("EVOLVING.......")
 
-    # Evaluate the individuals with an invalid fitness
-    invalid_ind = [ind for ind in pop if not ind.fitness.valid]
-    fitness = toolbox.map(toolbox.evaluate, invalid_ind)
-    for ind, fit in zip(invalid_ind, fitness):
+    # Initialize attributes
+    fitness = toolbox.map(toolbox.evaluate, pop)
+    for ind, fit in zip(pop, fitness):
         ind.fitness.values = fit
+    assignCrowdingDist(pop)
 
-    # This is just to assign the crowding distance to the individuals
-    # no actual selection is done
-    pop = toolbox.select(pop, len(pop))
+    record = stats.compile(pop)
+    logbook.record(gen=0, evals=len(pop), **record)
 
-    for g in range(num_generation):
-        print(f"-- GENERATION {g + 1} --")
-
+    for _ in tqdm(
+            range(num_generation),
+            bar_format='Generation {n}/{total}:|{bar}|[{elapsed}<{remaining},{rate_fmt}{postfix}]'
+    ):
+        # Vary the population
         offspring = tools.selTournamentDCD(pop, len(pop))
         offspring = [toolbox.clone(ind) for ind in offspring]
 
         for ind1, ind2 in zip(offspring[::2], offspring[1::2]):
             if random.random() <= crossover_prob:
                 toolbox.mate(ind1, ind2)
+                del ind1.fitness.values
+                del ind2.fitness.values
 
         for ind in offspring:
             if random.random() <= mutate_prob:
                 toolbox.mutate(ind)
-            del ind.fitness.values
+                del ind.fitness.values
+
+        pop = utils.deduplicate(pop + offspring)
 
         # Evaluate the individuals with an invalid fitness
-        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        invalid_ind = [ind for ind in pop if not ind.fitness.valid]
         fitness = toolbox.map(toolbox.evaluate, invalid_ind)
         for ind, fit in zip(invalid_ind, fitness):
             ind.fitness.values = fit
 
-        print(f"Evaluated {len(invalid_ind)} individuals")
-
         # Select the next generation population
-        pop = toolbox.select(pop + offspring, num_population)
+        pop = toolbox.select(pop, num_population)
 
-    print("-- Only the fittest survives --")
-    best_individual = tools.selBest(pop, 1)[0]
+        record = stats.compile(pop)
+        logbook.record(gen=0, evals=len(invalid_ind), **record)
 
-    accuracy = best_individual.fitness.values[0]
-    dim_reduction = best_individual.fitness.values[1]
+    accuracy = pop[0].fitness.values[0]
+    dim_reduction = pop[0].fitness.values[1]
 
-    print(f"Dimension reduction: {dim_reduction}.")
-    print(f"Accuracy: {accuracy}.")
+    print(f"Dimension reduction: {dim_reduction}")
+    print(f"Accuracy: {accuracy}\n")
 
-    return pop, accuracy, dim_reduction
+    return pop, logbook
