@@ -45,5 +45,5 @@ def deduplicate(a: list) -> iter:
     return reduce(lambda x, y: x if y in x else x + [y], [[], *a])
 
 
-def sort_population(pop: list, weight=5):
+def sort_population(pop: list, weight=3):
     return sorted(pop, key=lambda x: x.fitness.values[0] * weight + x.fitness.values[1], reverse=True)

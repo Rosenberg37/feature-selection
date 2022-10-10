@@ -57,8 +57,8 @@ def get_toolbox(
     toolbox.register("evaluate", evaluate, model_name=model_name, dataset=dataset, split=split)
 
     toolbox.register("select", tools.selNSGA2)
-    toolbox.register("mate", tools.cxUniform, indpb=0.3)
-    toolbox.register("mutate", tools.mutFlipBit, indpb=0.3)
+    toolbox.register("mate", tools.cxUniform, indpb=0.1)
+    toolbox.register("mutate", tools.mutFlipBit, indpb=0.1)
 
     if pool is not None:
         toolbox.register("map", pool.map)
@@ -99,7 +99,7 @@ def evaluate(
 def feature_selection_with_nsga2(
         toolbox: base.Toolbox,
         num_generation: int = 256,
-        num_population: int = 64,
+        num_population: int = 128,
         crossover_prob: float = 0.7,
         mutate_prob: float = 0.2,
 
