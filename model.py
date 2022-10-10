@@ -6,7 +6,7 @@
 @Date:      2022/10/7 18:47 
 @Documentation: 
     This file contains the implementation of the evolutionary algorithm for feature selection.
-    Mainly reference to the following article:
+    Mainly reference to the following articles:
         "https://www.jianshu.com/p/8fa044ed9267"
         "https://www.jianshu.com/p/3cbf5df95597"
         "https://www.jianshu.com/p/4873e16fa05a"
@@ -57,8 +57,8 @@ def get_toolbox(
     toolbox.register("evaluate", evaluate, model_name=model_name, dataset=dataset, split=split)
 
     toolbox.register("select", tools.selNSGA2)
-    toolbox.register("mate", tools.cxUniform, indpb=0.1)
-    toolbox.register("mutate", tools.mutFlipBit, indpb=0.1)
+    toolbox.register("mate", tools.cxUniform, indpb=0.5)
+    toolbox.register("mutate", tools.mutFlipBit, indpb=0.3)
 
     if pool is not None:
         toolbox.register("map", pool.map)
@@ -100,8 +100,8 @@ def feature_selection_with_nsga2(
         toolbox: base.Toolbox,
         num_generation: int = 256,
         num_population: int = 128,
-        crossover_prob: float = 0.7,
-        mutate_prob: float = 0.2,
+        crossover_prob: float = 0.9,
+        mutate_prob: float = 0.3,
 
 ):
     """
